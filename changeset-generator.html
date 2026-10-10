@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquibase Formatted SQL Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 850px;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            margin: auto;
+        }
+        h2 { margin-top: 0; color: #0066cc; }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input, select, textarea {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        textarea {
+            resize: vertical;
+            height: 150px;
+            font-family: monospace;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        button {
+            flex: 1;
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #004999;
+        }
+        button.secondary {
+            background-color: #28a745;
+        }
+        button.secondary:hover {
+            background-color: #218838;
+        }
+        .preview-box {
+            background: #1e1e1e;
+            color: #dcdcdc;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin-top: 20px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .preview-title {
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #copyStatus {
+            font-size: 13px;
+            color: #28a745;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Liquibase SQL Generator</h2>
+    
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="author">Author:</label>
+            <input type="text" id="author" value="developer">
+        </div>
+        
+        <div class="form-group">
+            <label for="dateId">Base Date ID Suffix (e.g., YYYYMMDD-001):</label>
+            <input type="text" id="dateId" value="">
+        </div>
+        
+        <div class="form-group">
+            <label for="splitMode">Changeset Mode:</label>
+            <select id="splitMode" onchange="toggleSplitOptions()">
+                <option value="single">Single Changeset (Atomic / Functions)</option>
+                <option value="multiple">Separate Changeset per Semicolon (;)</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="failRunGroup">
+            <label for="failRun">On Fail (Mark Run / Fail):</label>
+            <select id="failRun">
+                <option value="true">Fail on Error (Default)</option>
+                <option value="false">Mark Run on Fail / Ignore</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="context">Context (Optional):</label>
+            <input type="text" id="context" placeholder="e.g. DEV,DEMO">
+        </div>
+
+        <div class="form-group full-width">
+            <label for="comment">Changeset Comment:</label>
+            <input type="text" id="comment" value="Data queries and updates">
+        </div>
+
+        <div class="form-group full-width">
+            <label for="queries">Paste your SQL Queries here:</label>
+            <textarea id="queries" placeholder="Queries..."></textarea>
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button onclick="copyToClipboard()" class="secondary">📋 Copy to Clipboard</button>
+        <button onclick="generateAndDownload()">💾 Download .sql File</button>
+    </div>
+
+    <div class="preview-title">
+        <span>Live Preview:</span>
+        <span id="copyStatus"></span>
+    </div>
+    <div id="preview" class="preview-box">-- Fill out the form above to see the preview</div>
+</div>
+
+<script>
+    window.onload = function() {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        document.getElementById('dateId').value = `${yyyy}${mm}${dd}-001`;
+        updatePreview();
+    };
+
+    document.querySelectorAll('input, select, textarea').forEach(element => {
+        element.addEventListener('input', updatePreview);
+        element.addEventListener('change', updatePreview);
+    });
+
+    function toggleSplitOptions() {
+        const mode = document.getElementById('splitMode').value;
+        const failGroup = document.getElementById('failRunGroup');
+        // If multiple, failOnError can still apply per changeset, but let's keep it visible
+    }
+
+    function buildChangesetContent() {
+        const author = document.getElementById('author').value || 'developer';
+        const baseDateId = document.getElementById('dateId').value || '20261010-001';
+        const splitMode = document.getElementById('splitMode').value;
+        const context = document.getElementById('context').value.trim();
+        const failRun = document.getElementById('failRun').value;
+        const comment = document.getElementById('comment').value;
+        const rawQueries = document.getElementById('queries').value.trim();
+
+        let content = `-- liquibase formatted sql\n\n`;
+
+        if (splitMode === 'single') {
+            // ONE single changeset block with splitStatements:false
+            let properties = `splitStatements:false`;
+            if (failRun === 'false') properties += ` failOnError:false`;
+            if (context) properties += ` context:${context}`;
+
+            content += `-- changeset ${author}:${baseDateId} ${properties}\n`;
+            if (comment) content += `-- comment: ${comment}\n`;
+            content += `\n${rawQueries}\n`;
+
+        } else {
+            // MULTIPLE changesets split by semicolon
+            // Split queries by semicolon, filtering out empty entries
+            let statements = rawQueries.split(';')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+
+            // Parse baseDateId to handle auto-incrementing suffixes like 20261010-001
+            let basePrefix = baseDateId;
+            let counter = 1;
+            
+            // Check if baseDateId ends with a dash and numbers, e.g., "-001"
+            const match = baseDateId.match(/^(.*-)(\d+)$/);
+            if (match) {
+                basePrefix = match[1];
+                counter = parseInt(match[2], 10);
+            }
+
+            statements.forEach((stmt, index) => {
+                let currentCounter = counter + index;
+                // Format counter to 3 digits like 001, 002...
+                let paddedCounter = String(currentCounter).padStart(3, '0');
+                let currentId = `${basePrefix}${paddedCounter}`;
+
+                let properties = `splitStatements:true`;
+                if (failRun === 'false') properties += ` failOnError:false`;
+                if (context) properties += ` context:${context}`;
+
+                content += `-- changeset ${author}:${currentId} ${properties}\n`;
+                if (comment) {
+                    content += `-- comment: ${comment} (Query ${index + 1})\n`;
+                }
+                content += `\n${stmt};\n\n`;
+            });
+        }
+        
+        return content;
+    }
+
+    function updatePreview() {
+        document.getElementById('preview').textContent = buildChangesetContent();
+    }
+
+    function copyToClipboard() {
+        const content = buildChangesetContent();
+        navigator.clipboard.writeText(content).then(() => {
+            const status = document.getElementById('copyStatus');
+            status.textContent = 'Copied to clipboard successfully!';
+            setTimeout(() => { status.textContent = ''; }, 3000);
+        }).catch(err => {
+            alert('Failed to copy: ' + err);
+        });
+    }
+
+    function generateAndDownload() {
+        const content = buildChangesetContent();
+        const dateId = document.getElementById('dateId').value || 'migration';
+        const filename = `changelog-${dateId}.sql`;
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+</body>
+</html>
